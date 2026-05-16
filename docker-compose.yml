@@ -1,6 +1,15 @@
 version: "3.8"
 
+# ============================================================
+# DOCKER SWARM STACK — docker stack deploy -c docker-compose.yml bookshelf
+# Cluster: 1 manager + 2 workers
+# - Manager: DB, monitoring, Kong, Portainer, pgAdmin
+# - Workers: backend microservices + frontend (replicas: 2 distribuite)
+# ============================================================
+
 services:
+
+  # ─── DATABASE TIER (manager) ──────────────────────────────
   postgres:
     image: postgres:15
     environment:
@@ -11,13 +20,17 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - db-net
-    ports:
-      - "5433:5432"
     deploy:
+      replicas: 1
       placement:
-        constraints: [node.hostname == worker-2]
+        constraints: [node.role == manager]
       restart_policy:
         condition: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   pgadmin:
     image: dpage/pgadmin4
@@ -31,8 +44,9 @@ services:
     depends_on:
       - postgres
     deploy:
+      replicas: 1
       placement:
-        constraints: [node.hostname == worker-2]
+        constraints: [node.role == manager]
       restart_policy:
         condition: on-failure
 
@@ -47,19 +61,21 @@ services:
       - db-net
     depends_on:
       - postgres
-    healthcheck:
-      test: [ "CMD-SHELL", "nc -z localhost 8083 || exit 1" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
     deploy:
       replicas: 1
       placement:
-        constraints: [node.hostname == worker-2]
+        constraints: [node.role == manager]
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
       restart_policy:
         condition: on-failure
+        delay: 5s
+        max_attempts: 3
 
+  # ─── BUSINESS MICROSERVICES (workers, distribuite cu replicas: 2) ──
   auth-service:
     image: adacosma/auth-service:latest
     environment:
@@ -69,11 +85,18 @@ services:
     depends_on:
       - database-service
     deploy:
-      replicas: 1
+      replicas: 2
       placement:
-        constraints: [node.hostname == worker-2]
+        constraints: [node.role == worker]
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
       restart_policy:
         condition: on-failure
+        delay: 5s
+        max_attempts: 3
 
   library-service:
     image: adacosma/library-service:latest
@@ -85,11 +108,18 @@ services:
     depends_on:
       - database-service
     deploy:
-      replicas: 1
+      replicas: 2
       placement:
-        constraints: [node.hostname == worker-2]
+        constraints: [node.role == worker]
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
       restart_policy:
         condition: on-failure
+        delay: 5s
+        max_attempts: 3
 
   notification-service:
     image: adacosma/notification-service:latest
@@ -100,12 +130,35 @@ services:
     depends_on:
       - database-service
     deploy:
-      replicas: 1
+      replicas: 2
       placement:
-        constraints: [node.hostname == worker-2]
+        constraints: [node.role == worker]
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
       restart_policy:
         condition: on-failure
 
+  # ─── FRONTEND (workers) ───────────────────────────────────
+  react-frontend:
+    image: adacosma/react-frontend:latest
+    ports:
+      - "5173:80"
+    networks:
+      - frontend-net
+    deploy:
+      replicas: 2
+      placement:
+        constraints: [node.role == worker]
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+
+  # ─── API GATEWAY (manager) ────────────────────────────────
   kong:
     image: kong:latest
     environment:
@@ -115,7 +168,8 @@ services:
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
     configs:
       - source: kong_config
         target: /usr/local/kong/declarative/kong.yml
@@ -128,23 +182,11 @@ services:
     deploy:
       replicas: 1
       placement:
-        constraints: [node.hostname == worker-2]
+        constraints: [node.role == manager]
       restart_policy:
         condition: on-failure
 
-  react-frontend:
-    image: adacosma/react-frontend:latest
-    ports:
-      - "5173:80"
-    networks:
-      - frontend-net
-    deploy:
-      replicas: 1
-      placement:
-        constraints: [node.hostname == worker-2]
-      restart_policy:
-        condition: on-failure
-
+  # ─── MANAGEMENT (manager) ─────────────────────────────────
   portainer:
     image: portainer/portainer-ce:latest
     ports:
@@ -153,7 +195,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     networks:
-      - monitoring-net
+      - management-net
     deploy:
       replicas: 1
       placement:
@@ -161,6 +203,7 @@ services:
       restart_policy:
         condition: on-failure
 
+  # ─── MONITORING (manager) ─────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
     ports:
@@ -174,6 +217,8 @@ services:
       - '--web.enable-lifecycle'
     networks:
       - monitoring-net
+      - frontend-net
+      - backend-net
     deploy:
       replicas: 1
       placement:
@@ -188,6 +233,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
@@ -210,6 +256,7 @@ volumes:
   prometheus_data:
   grafana_data:
 
+# ─── NETWORKS (separare logică microservicii) ──────────────
 networks:
   frontend-net:
     driver: overlay
@@ -221,5 +268,8 @@ networks:
     driver: overlay
     attachable: true
   monitoring-net:
+    driver: overlay
+    attachable: true
+  management-net:
     driver: overlay
     attachable: true
