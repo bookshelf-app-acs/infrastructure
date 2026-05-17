@@ -37,6 +37,10 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@bookshelf.ro
       PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    volumes:
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     ports:
       - "5050:80"
     networks:
@@ -227,7 +231,7 @@ services:
         condition: on-failure
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.3.0
     ports:
       - "3000:3000"
     environment:
@@ -257,19 +261,35 @@ volumes:
   grafana_data:
 
 # ─── NETWORKS (separare logică microservicii) ──────────────
+# MTU 1400 pentru compatibilitate cu dind pe Windows/MacOS
 networks:
   frontend-net:
     driver: overlay
     attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
+      encrypted: "false"
   backend-net:
     driver: overlay
     attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
+      encrypted: "false"
   db-net:
     driver: overlay
     attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
+      encrypted: "false"
   monitoring-net:
     driver: overlay
     attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
+      encrypted: "false"
   management-net:
     driver: overlay
     attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
+      encrypted: "false"
