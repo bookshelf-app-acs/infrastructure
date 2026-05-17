@@ -1,11 +1,5 @@
 version: "3.8"
 
-# ============================================================
-# LOCAL DEVELOPMENT — docker compose -f docker-compose.local.yml up -d
-# Rulează totul pe mașina ta cu bridge networks (FĂRĂ Swarm).
-# Folosit pentru demo end-to-end (login, Kong, monitoring).
-# ============================================================
-
 services:
 
   postgres:

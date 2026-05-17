@@ -1,15 +1,7 @@
 version: "3.8"
 
-# ============================================================
-# DOCKER SWARM STACK — docker stack deploy -c docker-compose.yml bookshelf
-# Cluster: 1 manager + 2 workers
-# - Manager: DB, monitoring, Kong, Portainer, pgAdmin
-# - Workers: backend microservices + frontend (replicas: 2 distribuite)
-# ============================================================
-
 services:
 
-  # ─── DATABASE TIER (manager) ──────────────────────────────
   postgres:
     image: postgres:15
     environment:
@@ -79,7 +71,6 @@ services:
         delay: 5s
         max_attempts: 3
 
-  # ─── BUSINESS MICROSERVICES (workers, distribuite cu replicas: 2) ──
   auth-service:
     image: adacosma/auth-service:latest
     environment:
@@ -144,7 +135,6 @@ services:
       restart_policy:
         condition: on-failure
 
-  # ─── FRONTEND (workers) ───────────────────────────────────
   react-frontend:
     image: adacosma/react-frontend:latest
     ports:
@@ -162,7 +152,6 @@ services:
       restart_policy:
         condition: on-failure
 
-  # ─── API GATEWAY (manager) ────────────────────────────────
   kong:
     image: kong:latest
     environment:
@@ -190,7 +179,6 @@ services:
       restart_policy:
         condition: on-failure
 
-  # ─── MANAGEMENT (manager) ─────────────────────────────────
   portainer:
     image: portainer/portainer-ce:latest
     ports:
@@ -207,7 +195,6 @@ services:
       restart_policy:
         condition: on-failure
 
-  # ─── MONITORING (manager) ─────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
     ports:
@@ -260,8 +247,6 @@ volumes:
   prometheus_data:
   grafana_data:
 
-# ─── NETWORKS (separare logică microservicii) ──────────────
-# MTU 1400 pentru compatibilitate cu dind pe Windows/MacOS
 networks:
   frontend-net:
     driver: overlay
